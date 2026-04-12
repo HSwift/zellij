@@ -989,6 +989,29 @@ pub enum Event {
     // headers,
     // body,
     // context
+    /// A WebSocket connection was successfully established
+    WebSocketConnected(
+        u32,                          // connection_id
+        BTreeMap<String, String>,     // context (passed through from open call)
+    ),
+    /// A message was received on an open WebSocket connection
+    WebSocketMessage(
+        u32,      // connection_id
+        Vec<u8>,  // message payload
+        bool,     // is_binary (true = binary, false = text)
+    ),
+    /// An error occurred on a WebSocket connection
+    WebSocketError(
+        u32,                          // connection_id
+        String,                       // error description
+        BTreeMap<String, String>,     // context (passed through from open call)
+    ),
+    /// A WebSocket connection was closed (normally or due to error)
+    WebSocketDisconnected(
+        u32,                          // connection_id
+        String,                       // close reason
+        BTreeMap<String, String>,     // context (passed through from open call)
+    ),
     CommandPaneOpened(u32, Context), // u32 - terminal_pane_id
     CommandPaneExited(u32, Option<i32>, Context), // u32 - terminal_pane_id, Option<i32> -
     // exit_code
@@ -3390,6 +3413,22 @@ pub enum PluginCommand {
         BTreeMap<String, String>, // headers
         Vec<u8>,                  // body
         BTreeMap<String, String>, // context
+    ),
+    /// Open a WebSocket connection to the specified URL
+    WebSocketOpen(
+        String,                       // url (ws:// or wss://)
+        BTreeMap<String, String>,     // headers (for handshake)
+        BTreeMap<String, String>,     // context (returned with events)
+    ),
+    /// Send a message on an existing WebSocket connection
+    WebSocketSend(
+        u32,      // connection_id
+        Vec<u8>,  // message payload
+        bool,     // is_binary (true = binary, false = text)
+    ),
+    /// Close an existing WebSocket connection
+    WebSocketClose(
+        u32,      // connection_id
     ),
     RenameSession(String),         // String -> new session name
     UnblockCliPipeInput(String),   // String => pipe name

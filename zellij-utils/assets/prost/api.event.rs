@@ -9,7 +9,7 @@ pub struct EventNameList {
 pub struct Event {
     #[prost(enumeration="EventType", tag="1")]
     pub name: i32,
-    #[prost(oneof="event::Payload", tags="2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38")]
+    #[prost(oneof="event::Payload", tags="2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42")]
     pub payload: ::core::option::Option<event::Payload>,
 }
 /// Nested message and enum types in `Event`.
@@ -91,6 +91,14 @@ pub mod event {
         PaneRenderReportWithAnsiPayload(super::PaneRenderReportPayload),
         #[prost(message, tag="38")]
         InitialKeybindsPayload(super::InitialKeybindsPayload),
+        #[prost(message, tag="39")]
+        WebSocketConnectedPayload(super::WebSocketConnectedPayload),
+        #[prost(message, tag="40")]
+        WebSocketMessagePayload(super::WebSocketMessagePayload),
+        #[prost(message, tag="41")]
+        WebSocketErrorPayload(super::WebSocketErrorPayload),
+        #[prost(message, tag="42")]
+        WebSocketDisconnectedPayload(super::WebSocketDisconnectedPayload),
     }
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -753,6 +761,44 @@ pub struct InitialKeybindsPayload {
     #[prost(message, repeated, tag="1")]
     pub keybinds: ::prost::alloc::vec::Vec<InputModeKeybinds>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct WebSocketConnectedPayload {
+    #[prost(uint32, tag="1")]
+    pub connection_id: u32,
+    #[prost(message, repeated, tag="2")]
+    pub context: ::prost::alloc::vec::Vec<ContextItem>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct WebSocketMessagePayload {
+    #[prost(uint32, tag="1")]
+    pub connection_id: u32,
+    #[prost(bytes="vec", tag="2")]
+    pub message: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bool, tag="3")]
+    pub is_binary: bool,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct WebSocketErrorPayload {
+    #[prost(uint32, tag="1")]
+    pub connection_id: u32,
+    #[prost(string, tag="2")]
+    pub error: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag="3")]
+    pub context: ::prost::alloc::vec::Vec<ContextItem>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct WebSocketDisconnectedPayload {
+    #[prost(uint32, tag="1")]
+    pub connection_id: u32,
+    #[prost(string, tag="2")]
+    pub reason: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag="3")]
+    pub context: ::prost::alloc::vec::Vec<ContextItem>,
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum EventType {
@@ -815,6 +861,10 @@ pub enum EventType {
     HighlightClicked = 42,
     PaneRenderReportWithAnsi = 43,
     InitialKeybinds = 44,
+    WebSocketConnected = 45,
+    WebSocketMessage = 46,
+    WebSocketError = 47,
+    WebSocketDisconnected = 48,
 }
 impl EventType {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -867,6 +917,10 @@ impl EventType {
             EventType::HighlightClicked => "HighlightClicked",
             EventType::PaneRenderReportWithAnsi => "PaneRenderReportWithAnsi",
             EventType::InitialKeybinds => "InitialKeybinds",
+            EventType::WebSocketConnected => "WebSocketConnected",
+            EventType::WebSocketMessage => "WebSocketMessage",
+            EventType::WebSocketError => "WebSocketError",
+            EventType::WebSocketDisconnected => "WebSocketDisconnected",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -916,6 +970,10 @@ impl EventType {
             "HighlightClicked" => Some(Self::HighlightClicked),
             "PaneRenderReportWithAnsi" => Some(Self::PaneRenderReportWithAnsi),
             "InitialKeybinds" => Some(Self::InitialKeybinds),
+            "WebSocketConnected" => Some(Self::WebSocketConnected),
+            "WebSocketMessage" => Some(Self::WebSocketMessage),
+            "WebSocketError" => Some(Self::WebSocketError),
+            "WebSocketDisconnected" => Some(Self::WebSocketDisconnected),
             _ => None,
         }
     }

@@ -556,6 +556,57 @@ impl TryFrom<ProtobufEvent> for Event {
                 },
                 _ => Err("Malformed payload for InitialKeybinds Event"),
             },
+            Some(ProtobufEventType::WebSocketConnected) => match protobuf_event.payload {
+                Some(ProtobufEventPayload::WebSocketConnectedPayload(payload)) => {
+                    let context = payload
+                        .context
+                        .into_iter()
+                        .map(|c_i| (c_i.name, c_i.value))
+                        .collect();
+                    Ok(Event::WebSocketConnected(payload.connection_id, context))
+                },
+                _ => Err("Malformed payload for the WebSocketConnected Event"),
+            },
+            Some(ProtobufEventType::WebSocketMessage) => match protobuf_event.payload {
+                Some(ProtobufEventPayload::WebSocketMessagePayload(payload)) => {
+                    Ok(Event::WebSocketMessage(
+                        payload.connection_id,
+                        payload.message,
+                        payload.is_binary,
+                    ))
+                },
+                _ => Err("Malformed payload for the WebSocketMessage Event"),
+            },
+            Some(ProtobufEventType::WebSocketError) => match protobuf_event.payload {
+                Some(ProtobufEventPayload::WebSocketErrorPayload(payload)) => {
+                    let context = payload
+                        .context
+                        .into_iter()
+                        .map(|c_i| (c_i.name, c_i.value))
+                        .collect();
+                    Ok(Event::WebSocketError(
+                        payload.connection_id,
+                        payload.error,
+                        context,
+                    ))
+                },
+                _ => Err("Malformed payload for the WebSocketError Event"),
+            },
+            Some(ProtobufEventType::WebSocketDisconnected) => match protobuf_event.payload {
+                Some(ProtobufEventPayload::WebSocketDisconnectedPayload(payload)) => {
+                    let context = payload
+                        .context
+                        .into_iter()
+                        .map(|c_i| (c_i.name, c_i.value))
+                        .collect();
+                    Ok(Event::WebSocketDisconnected(
+                        payload.connection_id,
+                        payload.reason,
+                        context,
+                    ))
+                },
+                _ => Err("Malformed payload for the WebSocketDisconnected Event"),
+            },
             None => Err("Unknown Protobuf Event"),
         }
     }
@@ -1104,6 +1155,54 @@ impl TryFrom<Event> for ProtobufEvent {
                     )),
                 })
             },
+            Event::WebSocketConnected(connection_id, context) => Ok(ProtobufEvent {
+                name: ProtobufEventType::WebSocketConnected as i32,
+                payload: Some(event::Payload::WebSocketConnectedPayload(
+                    WebSocketConnectedPayload {
+                        connection_id,
+                        context: context
+                            .into_iter()
+                            .map(|(name, value)| ContextItem { name, value })
+                            .collect(),
+                    },
+                )),
+            }),
+            Event::WebSocketMessage(connection_id, message, is_binary) => Ok(ProtobufEvent {
+                name: ProtobufEventType::WebSocketMessage as i32,
+                payload: Some(event::Payload::WebSocketMessagePayload(
+                    WebSocketMessagePayload {
+                        connection_id,
+                        message,
+                        is_binary,
+                    },
+                )),
+            }),
+            Event::WebSocketError(connection_id, error, context) => Ok(ProtobufEvent {
+                name: ProtobufEventType::WebSocketError as i32,
+                payload: Some(event::Payload::WebSocketErrorPayload(
+                    WebSocketErrorPayload {
+                        connection_id,
+                        error,
+                        context: context
+                            .into_iter()
+                            .map(|(name, value)| ContextItem { name, value })
+                            .collect(),
+                    },
+                )),
+            }),
+            Event::WebSocketDisconnected(connection_id, reason, context) => Ok(ProtobufEvent {
+                name: ProtobufEventType::WebSocketDisconnected as i32,
+                payload: Some(event::Payload::WebSocketDisconnectedPayload(
+                    WebSocketDisconnectedPayload {
+                        connection_id,
+                        reason,
+                        context: context
+                            .into_iter()
+                            .map(|(name, value)| ContextItem { name, value })
+                            .collect(),
+                    },
+                )),
+            }),
         }
     }
 }
@@ -2019,6 +2118,10 @@ impl TryFrom<ProtobufEventType> for EventType {
             ProtobufEventType::PluginConfigurationChanged => EventType::PluginConfigurationChanged,
             ProtobufEventType::HighlightClicked => EventType::HighlightClicked,
             ProtobufEventType::InitialKeybinds => EventType::InitialKeybinds,
+            ProtobufEventType::WebSocketConnected => EventType::WebSocketConnected,
+            ProtobufEventType::WebSocketMessage => EventType::WebSocketMessage,
+            ProtobufEventType::WebSocketError => EventType::WebSocketError,
+            ProtobufEventType::WebSocketDisconnected => EventType::WebSocketDisconnected,
         })
     }
 }
@@ -2071,6 +2174,10 @@ impl TryFrom<EventType> for ProtobufEventType {
             EventType::PluginConfigurationChanged => ProtobufEventType::PluginConfigurationChanged,
             EventType::HighlightClicked => ProtobufEventType::HighlightClicked,
             EventType::InitialKeybinds => ProtobufEventType::InitialKeybinds,
+            EventType::WebSocketConnected => ProtobufEventType::WebSocketConnected,
+            EventType::WebSocketMessage => ProtobufEventType::WebSocketMessage,
+            EventType::WebSocketError => ProtobufEventType::WebSocketError,
+            EventType::WebSocketDisconnected => ProtobufEventType::WebSocketDisconnected,
         })
     }
 }
@@ -3036,5 +3143,87 @@ fn serialize_pane_render_report_with_ansi_event_with_data() {
     assert_eq!(
         event, deserialized_event,
         "PaneRenderReportWithAnsi event with ANSI data properly serialized/deserialized"
+    );
+}
+
+#[test]
+fn serialize_web_socket_connected_event() {
+    use prost::Message;
+    let mut context = BTreeMap::new();
+    context.insert("request_id".to_string(), "abc-123".to_string());
+    let event = Event::WebSocketConnected(42, context);
+    let protobuf_event: ProtobufEvent = event.clone().try_into().unwrap();
+    let serialized = protobuf_event.encode_to_vec();
+    let deserialized_protobuf: ProtobufEvent = Message::decode(serialized.as_slice()).unwrap();
+    let deserialized_event: Event = deserialized_protobuf.try_into().unwrap();
+    assert_eq!(
+        event, deserialized_event,
+        "WebSocketConnected event properly serialized/deserialized without change"
+    );
+}
+
+#[test]
+fn serialize_web_socket_message_event() {
+    use prost::Message;
+    // Test text message
+    let event_text = Event::WebSocketMessage(42, b"hello world".to_vec(), false);
+    let protobuf_event: ProtobufEvent = event_text.clone().try_into().unwrap();
+    let serialized = protobuf_event.encode_to_vec();
+    let deserialized_protobuf: ProtobufEvent = Message::decode(serialized.as_slice()).unwrap();
+    let deserialized_event: Event = deserialized_protobuf.try_into().unwrap();
+    assert_eq!(
+        event_text, deserialized_event,
+        "WebSocketMessage text event properly serialized/deserialized without change"
+    );
+
+    // Test binary message
+    let event_binary = Event::WebSocketMessage(7, vec![0x00, 0xFF, 0x42], true);
+    let protobuf_event: ProtobufEvent = event_binary.clone().try_into().unwrap();
+    let serialized = protobuf_event.encode_to_vec();
+    let deserialized_protobuf: ProtobufEvent = Message::decode(serialized.as_slice()).unwrap();
+    let deserialized_event: Event = deserialized_protobuf.try_into().unwrap();
+    assert_eq!(
+        event_binary, deserialized_event,
+        "WebSocketMessage binary event properly serialized/deserialized without change"
+    );
+}
+
+#[test]
+fn serialize_web_socket_error_event() {
+    use prost::Message;
+    let mut context = BTreeMap::new();
+    context.insert("url".to_string(), "wss://example.com".to_string());
+    let event = Event::WebSocketError(
+        42,
+        "Connection refused".to_string(),
+        context,
+    );
+    let protobuf_event: ProtobufEvent = event.clone().try_into().unwrap();
+    let serialized = protobuf_event.encode_to_vec();
+    let deserialized_protobuf: ProtobufEvent = Message::decode(serialized.as_slice()).unwrap();
+    let deserialized_event: Event = deserialized_protobuf.try_into().unwrap();
+    assert_eq!(
+        event, deserialized_event,
+        "WebSocketError event properly serialized/deserialized without change"
+    );
+}
+
+#[test]
+fn serialize_web_socket_disconnected_event() {
+    use prost::Message;
+    let mut context = BTreeMap::new();
+    context.insert("session".to_string(), "main".to_string());
+    let event = Event::WebSocketDisconnected(
+        42,
+        "Normal closure".to_string(),
+        context,
+    );
+    let protobuf_event: ProtobufEvent = event.clone().try_into().unwrap();
+    let serialized = protobuf_event.encode_to_vec();
+    let deserialized_protobuf: ProtobufEvent = Message::decode(serialized.as_slice()).unwrap();
+    let deserialized_event: Event = deserialized_protobuf.try_into().unwrap();
+    assert_eq!(
+        event, deserialized_event,
+        "WebSocketDisconnected event properly serialized/deserialized without change"
     );
 }

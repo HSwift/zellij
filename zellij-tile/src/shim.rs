@@ -2820,6 +2820,59 @@ pub fn clear_pane_highlights(pane_id: PaneId) {
     unsafe { host_run_plugin_command() };
 }
 
+/// Open a WebSocket connection to the specified URL.
+///
+/// The `headers` map allows specifying custom headers for the initial handshake.
+/// The `context` map is returned verbatim in all subsequent WebSocket events
+/// (`WebSocketConnected`, `WebSocketMessage`, `WebSocketError`, `WebSocketDisconnected`)
+/// and can be used to correlate events with specific connections.
+///
+/// Subscribe to `WebSocketConnected` to receive the assigned `connection_id` for
+/// subsequent `web_socket_send` and `web_socket_close` calls.
+///
+/// Requires `WebAccess` permission.
+pub fn web_socket_open<S: AsRef<str>>(
+    url: S,
+    headers: BTreeMap<String, String>,
+    context: BTreeMap<String, String>,
+) where
+    S: ToString,
+{
+    let plugin_command =
+        PluginCommand::WebSocketOpen(url.to_string(), headers, context);
+    let protobuf_plugin_command: ProtobufPluginCommand = plugin_command.try_into().unwrap();
+    object_to_stdout(&protobuf_plugin_command.encode_to_vec());
+    unsafe { host_run_plugin_command() };
+}
+
+/// Send a message over an established WebSocket connection.
+///
+/// `connection_id` is the identifier received in the `WebSocketConnected` event.
+/// `message` is the raw bytes to send.
+/// `is_binary` indicates whether the message should be sent as a binary frame (`true`)
+/// or a text frame (`false`).
+///
+/// Requires `WebAccess` permission.
+pub fn web_socket_send(connection_id: u32, message: Vec<u8>, is_binary: bool) {
+    let plugin_command = PluginCommand::WebSocketSend(connection_id, message, is_binary);
+    let protobuf_plugin_command: ProtobufPluginCommand = plugin_command.try_into().unwrap();
+    object_to_stdout(&protobuf_plugin_command.encode_to_vec());
+    unsafe { host_run_plugin_command() };
+}
+
+/// Close an established WebSocket connection.
+///
+/// `connection_id` is the identifier received in the `WebSocketConnected` event.
+/// A `WebSocketDisconnected` event will be fired after the connection is cleanly closed.
+///
+/// Requires `WebAccess` permission.
+pub fn web_socket_close(connection_id: u32) {
+    let plugin_command = PluginCommand::WebSocketClose(connection_id);
+    let protobuf_plugin_command: ProtobufPluginCommand = plugin_command.try_into().unwrap();
+    object_to_stdout(&protobuf_plugin_command.encode_to_vec());
+    unsafe { host_run_plugin_command() };
+}
+
 #[link(wasm_import_module = "zellij")]
 extern "C" {
     fn host_run_plugin_command();

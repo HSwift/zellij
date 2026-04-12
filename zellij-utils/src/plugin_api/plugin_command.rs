@@ -115,6 +115,7 @@ pub use super::generated_api::api::{
         StackPanesPayload, SubscribePayload, SwitchSessionPayload, SwitchTabToIdPayload,
         SwitchTabToPayload, TogglePaneBorderlessPayload, TogglePaneEmbedOrEjectForPaneIdPayload,
         TogglePaneIdFullscreenPayload, UnsubscribePayload, WebRequestPayload,
+        WebSocketClosePayload, WebSocketOpenPayload, WebSocketSendPayload,
         WriteCharsToPaneIdPayload, WriteToPaneIdPayload,
     },
     plugin_permission::PermissionType as ProtobufPermissionType,
@@ -2569,6 +2570,38 @@ impl TryFrom<ProtobufPluginCommand> for PluginCommand {
                 },
                 _ => Err("Mismatched payload for OpenPluginPaneFloating"),
             },
+            Some(CommandName::WebSocketOpen) => match protobuf_plugin_command.payload {
+                Some(Payload::WebSocketOpenPayload(payload)) => {
+                    let headers: BTreeMap<String, String> = payload
+                        .headers
+                        .into_iter()
+                        .map(|h| (h.name, h.value))
+                        .collect();
+                    let context: BTreeMap<String, String> = payload
+                        .context
+                        .into_iter()
+                        .map(|c_i| (c_i.name, c_i.value))
+                        .collect();
+                    Ok(PluginCommand::WebSocketOpen(payload.url, headers, context))
+                },
+                _ => Err("Mismatched payload for WebSocketOpen"),
+            },
+            Some(CommandName::WebSocketSend) => match protobuf_plugin_command.payload {
+                Some(Payload::WebSocketSendPayload(payload)) => {
+                    Ok(PluginCommand::WebSocketSend(
+                        payload.connection_id,
+                        payload.message,
+                        payload.is_binary,
+                    ))
+                },
+                _ => Err("Mismatched payload for WebSocketSend"),
+            },
+            Some(CommandName::WebSocketClose) => match protobuf_plugin_command.payload {
+                Some(Payload::WebSocketClosePayload(payload)) => {
+                    Ok(PluginCommand::WebSocketClose(payload.connection_id))
+                },
+                _ => Err("Mismatched payload for WebSocketClose"),
+            },
             None => Err("Unrecognized plugin command"),
         }
     }
@@ -4256,6 +4289,40 @@ impl TryFrom<PluginCommand> for ProtobufPluginCommand {
                     )),
                 })
             },
+            PluginCommand::WebSocketOpen(url, headers, context) => {
+                let headers: Vec<_> = headers
+                    .into_iter()
+                    .map(|(name, value)| Header { name, value })
+                    .collect();
+                let context: Vec<_> = context
+                    .into_iter()
+                    .map(|(name, value)| ContextItem { name, value })
+                    .collect();
+                Ok(ProtobufPluginCommand {
+                    name: CommandName::WebSocketOpen as i32,
+                    payload: Some(Payload::WebSocketOpenPayload(WebSocketOpenPayload {
+                        url,
+                        headers,
+                        context,
+                    })),
+                })
+            },
+            PluginCommand::WebSocketSend(connection_id, message, is_binary) => {
+                Ok(ProtobufPluginCommand {
+                    name: CommandName::WebSocketSend as i32,
+                    payload: Some(Payload::WebSocketSendPayload(WebSocketSendPayload {
+                        connection_id,
+                        message,
+                        is_binary,
+                    })),
+                })
+            },
+            PluginCommand::WebSocketClose(connection_id) => Ok(ProtobufPluginCommand {
+                name: CommandName::WebSocketClose as i32,
+                payload: Some(Payload::WebSocketClosePayload(WebSocketClosePayload {
+                    connection_id,
+                })),
+            }),
         }
     }
 }

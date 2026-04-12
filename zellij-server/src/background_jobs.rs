@@ -10,6 +10,10 @@ use zellij_utils::input::layout::RunPlugin;
 #[allow(unused_imports)]
 use zellij_utils::shared::parse_base_url;
 
+use futures_util::{SinkExt, StreamExt};
+use tokio::sync::mpsc as tokio_mpsc;
+use tokio_tungstenite::tungstenite;
+
 #[cfg(feature = "web_server_capability")]
 use zellij_utils::web_server_commands::{
     discover_webserver_sockets, query_webserver_with_response, InstructionForWebServer,
@@ -25,7 +29,7 @@ use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicU32, Ordering},
     Arc, Mutex,
 };
 use std::time::{Duration, Instant};
@@ -65,6 +69,25 @@ pub enum BackgroundJob {
         Vec<u8>,                  // body
         BTreeMap<String, String>, // context
     ),
+    WebSocketOpen(
+        PluginId,
+        ClientId,
+        String,                       // url (ws:// or wss://)
+        BTreeMap<String, String>,     // headers (for handshake)
+        BTreeMap<String, String>,     // context (returned with events)
+    ),
+    WebSocketSend(
+        PluginId,
+        ClientId,
+        u32,      // connection_id
+        Vec<u8>,  // message payload
+        bool,     // is_binary
+    ),
+    WebSocketClose(
+        PluginId,
+        ClientId,
+        u32,      // connection_id
+    ),
     HighlightPanesWithMessage(Vec<PaneId>, String),
     RenderToClients,
     QueryZellijWebServerStatus,
@@ -93,6 +116,9 @@ impl From<&BackgroundJob> for BackgroundJobContext {
             BackgroundJob::ReportLayoutInfo(..) => BackgroundJobContext::ReportLayoutInfo,
             BackgroundJob::RunCommand(..) => BackgroundJobContext::RunCommand,
             BackgroundJob::WebRequest(..) => BackgroundJobContext::WebRequest,
+            BackgroundJob::WebSocketOpen(..) => BackgroundJobContext::WebSocketOpen,
+            BackgroundJob::WebSocketSend(..) => BackgroundJobContext::WebSocketSend,
+            BackgroundJob::WebSocketClose(..) => BackgroundJobContext::WebSocketClose,
             BackgroundJob::ReportPluginList(..) => BackgroundJobContext::ReportPluginList,
             BackgroundJob::RenderToClients => BackgroundJobContext::ReportPluginList,
             BackgroundJob::HighlightPanesWithMessage(..) => {
@@ -150,6 +176,17 @@ pub(crate) fn background_jobs_main(
         .ok();
     // We needn't do anything with the runtime, but it should exist at this point.
     let runtime = crate::global_async_runtime::get_tokio_runtime();
+
+    // WebSocket connection management
+    // Maps connection_id -> channel sender that forwards commands to the per-connection task
+    #[derive(Debug)]
+    enum WsCommand {
+        Send(Vec<u8>, bool), // message, is_binary
+        Close,
+    }
+    let ws_connections: Arc<Mutex<HashMap<u32, tokio_mpsc::UnboundedSender<WsCommand>>>> =
+        Arc::new(Mutex::new(HashMap::new()));
+    let ws_next_connection_id = Arc::new(AtomicU32::new(1));
 
     loop {
         let (event, mut err_ctx) = bus.recv().with_context(err_context)?;
@@ -431,6 +468,220 @@ pub(crate) fn background_jobs_main(
                         }
                     }
                 });
+            },
+            BackgroundJob::WebSocketOpen(plugin_id, client_id, url, headers, context) => {
+                let connection_id = ws_next_connection_id.fetch_add(1, Ordering::SeqCst);
+                let (cmd_tx, mut cmd_rx) = tokio_mpsc::unbounded_channel::<WsCommand>();
+                {
+                    let mut conns = ws_connections.lock().unwrap();
+                    conns.insert(connection_id, cmd_tx);
+                }
+                let ws_connections = ws_connections.clone();
+                runtime.spawn({
+                    let senders = bus.senders.clone();
+                    async move {
+                        // Build a custom HTTP request with headers for the handshake
+                        let ws_request = {
+                            let mut req = tungstenite::http::Request::builder()
+                                .uri(&url);
+                            for (key, val) in &headers {
+                                req = req.header(key.as_str(), val.as_str());
+                            }
+                            match req.body(()) {
+                                Ok(r) => r,
+                                Err(e) => {
+                                    let _ = senders.send_to_plugin(PluginInstruction::Update(vec![(
+                                        Some(plugin_id),
+                                        Some(client_id),
+                                        Event::WebSocketError(
+                                            connection_id,
+                                            format!("Failed to build WebSocket request: {}", e),
+                                            context,
+                                        ),
+                                    )]));
+                                    ws_connections.lock().unwrap().remove(&connection_id);
+                                    return;
+                                },
+                            }
+                        };
+
+                        // Connect
+                        let ws_stream = match tokio_tungstenite::connect_async(ws_request).await {
+                            Ok((stream, _response)) => stream,
+                            Err(e) => {
+                                let _ = senders.send_to_plugin(PluginInstruction::Update(vec![(
+                                    Some(plugin_id),
+                                    Some(client_id),
+                                    Event::WebSocketError(
+                                        connection_id,
+                                        format!("WebSocket connection failed: {}", e),
+                                        context,
+                                    ),
+                                )]));
+                                ws_connections.lock().unwrap().remove(&connection_id);
+                                return;
+                            },
+                        };
+
+                        // Notify plugin of successful connection
+                        let _ = senders.send_to_plugin(PluginInstruction::Update(vec![(
+                            Some(plugin_id),
+                            Some(client_id),
+                            Event::WebSocketConnected(connection_id, context.clone()),
+                        )]));
+
+                        let (mut ws_sink, mut ws_stream_reader) = ws_stream.split();
+
+                        loop {
+                            tokio::select! {
+                                // Incoming message from the WebSocket server
+                                msg = ws_stream_reader.next() => {
+                                    match msg {
+                                        Some(Ok(tungstenite::Message::Text(text))) => {
+                                            let _ = senders.send_to_plugin(PluginInstruction::Update(vec![(
+                                                Some(plugin_id),
+                                                Some(client_id),
+                                                Event::WebSocketMessage(
+                                                    connection_id,
+                                                    text.as_bytes().to_vec(),
+                                                    false,
+                                                ),
+                                            )]));
+                                        },
+                                        Some(Ok(tungstenite::Message::Binary(data))) => {
+                                            let _ = senders.send_to_plugin(PluginInstruction::Update(vec![(
+                                                Some(plugin_id),
+                                                Some(client_id),
+                                                Event::WebSocketMessage(
+                                                    connection_id,
+                                                    data,
+                                                    true,
+                                                ),
+                                            )]));
+                                        },
+                                        Some(Ok(tungstenite::Message::Ping(_))) | Some(Ok(tungstenite::Message::Pong(_))) => {
+                                            // Ping/Pong handled automatically by tungstenite
+                                        },
+                                        Some(Ok(tungstenite::Message::Close(frame))) => {
+                                            let reason = frame
+                                                .map(|f| f.reason.to_string())
+                                                .unwrap_or_default();
+                                            let _ = senders.send_to_plugin(PluginInstruction::Update(vec![(
+                                                Some(plugin_id),
+                                                Some(client_id),
+                                                Event::WebSocketDisconnected(
+                                                    connection_id,
+                                                    reason,
+                                                    context.clone(),
+                                                ),
+                                            )]));
+                                            break;
+                                        },
+                                        Some(Ok(tungstenite::Message::Frame(_))) => {
+                                            // Raw frames – ignore
+                                        },
+                                        Some(Err(e)) => {
+                                            let _ = senders.send_to_plugin(PluginInstruction::Update(vec![(
+                                                Some(plugin_id),
+                                                Some(client_id),
+                                                Event::WebSocketError(
+                                                    connection_id,
+                                                    format!("WebSocket error: {}", e),
+                                                    context.clone(),
+                                                ),
+                                            )]));
+                                            let _ = senders.send_to_plugin(PluginInstruction::Update(vec![(
+                                                Some(plugin_id),
+                                                Some(client_id),
+                                                Event::WebSocketDisconnected(
+                                                    connection_id,
+                                                    format!("Disconnected due to error: {}", e),
+                                                    context.clone(),
+                                                ),
+                                            )]));
+                                            break;
+                                        },
+                                        None => {
+                                            // Stream ended
+                                            let _ = senders.send_to_plugin(PluginInstruction::Update(vec![(
+                                                Some(plugin_id),
+                                                Some(client_id),
+                                                Event::WebSocketDisconnected(
+                                                    connection_id,
+                                                    "Connection closed".to_string(),
+                                                    context.clone(),
+                                                ),
+                                            )]));
+                                            break;
+                                        },
+                                    }
+                                },
+                                // Commands from the plugin (send / close)
+                                cmd = cmd_rx.recv() => {
+                                    match cmd {
+                                        Some(WsCommand::Send(data, is_binary)) => {
+                                            let msg = if is_binary {
+                                                tungstenite::Message::Binary(data)
+                                            } else {
+                                                match String::from_utf8(data) {
+                                                    Ok(text) => tungstenite::Message::Text(text),
+                                                    Err(e) => tungstenite::Message::Binary(e.into_bytes()),
+                                                }
+                                            };
+                                            if let Err(e) = ws_sink.send(msg).await {
+                                                let _ = senders.send_to_plugin(PluginInstruction::Update(vec![(
+                                                    Some(plugin_id),
+                                                    Some(client_id),
+                                                    Event::WebSocketError(
+                                                        connection_id,
+                                                        format!("Failed to send WebSocket message: {}", e),
+                                                        context.clone(),
+                                                    ),
+                                                )]));
+                                            }
+                                        },
+                                        Some(WsCommand::Close) => {
+                                            let _ = ws_sink.send(tungstenite::Message::Close(None)).await;
+                                            let _ = senders.send_to_plugin(PluginInstruction::Update(vec![(
+                                                Some(plugin_id),
+                                                Some(client_id),
+                                                Event::WebSocketDisconnected(
+                                                    connection_id,
+                                                    "Closed by plugin".to_string(),
+                                                    context.clone(),
+                                                ),
+                                            )]));
+                                            break;
+                                        },
+                                        None => {
+                                            // Channel dropped – clean up
+                                            break;
+                                        },
+                                    }
+                                },
+                            }
+                        }
+
+                        // Clean up connection from the shared map
+                        ws_connections.lock().unwrap().remove(&connection_id);
+                    }
+                });
+            },
+            BackgroundJob::WebSocketSend(_plugin_id, _client_id, connection_id, message, is_binary) => {
+                let conns = ws_connections.lock().unwrap();
+                if let Some(tx) = conns.get(&connection_id) {
+                    let _ = tx.send(WsCommand::Send(message, is_binary));
+                } else {
+                    log::error!("WebSocketSend: connection_id {} not found", connection_id);
+                }
+            },
+            BackgroundJob::WebSocketClose(_plugin_id, _client_id, connection_id) => {
+                let conns = ws_connections.lock().unwrap();
+                if let Some(tx) = conns.get(&connection_id) {
+                    let _ = tx.send(WsCommand::Close);
+                } else {
+                    log::error!("WebSocketClose: connection_id {} not found", connection_id);
+                }
             },
             BackgroundJob::QueryZellijWebServerStatus => {
                 #[cfg(feature = "web_server_capability")]

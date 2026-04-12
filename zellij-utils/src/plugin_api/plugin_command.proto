@@ -203,6 +203,9 @@ enum CommandName {
   ClearPaneHighlights = 208;
   OpenPluginPaneFloating = 209;
   ListWindowsVolumes = 210;
+  WebSocketOpen = 211;
+  WebSocketSend = 212;
+  WebSocketClose = 213;
 }
 
 message PluginCommand {
@@ -354,6 +357,9 @@ message PluginCommand {
     SetPaneRegexHighlightsPayload set_pane_regex_highlights_payload = 158;
     ClearPaneHighlightsPayload clear_pane_highlights_payload = 159;
     OpenPluginPaneFloatingPayload open_plugin_pane_floating_payload = 160;
+    WebSocketOpenPayload web_socket_open_payload = 161;
+    WebSocketSendPayload web_socket_send_payload = 162;
+    WebSocketClosePayload web_socket_close_payload = 163;
   }
 }
 
@@ -798,6 +804,21 @@ message CloseTabWithIdPayload {
   uint64 tab_id = 1;
 }
 
+message WebSocketOpenPayload {
+  string url = 1;
+  repeated event.Header headers = 2;
+  repeated ContextItem context = 3;
+}
+
+message WebSocketSendPayload {
+  uint32 connection_id = 1;
+  bytes message = 2;
+  bool is_binary = 3;
+}
+
+message WebSocketClosePayload {
+  uint32 connection_id = 1;
+}
 message RenameTabWithIdPayload {
   uint64 tab_id = 1;
   string new_name = 2;

@@ -249,6 +249,15 @@ fn host_run_plugin_command(mut caller: Caller<'_, PluginEnv>) {
                     PluginCommand::WebRequest(url, verb, headers, body, context) => {
                         web_request(env, url, verb, headers, body, context)
                     },
+                    PluginCommand::WebSocketOpen(url, headers, context) => {
+                        web_socket_open(env, url, headers, context)
+                    },
+                    PluginCommand::WebSocketSend(connection_id, message, is_binary) => {
+                        web_socket_send(env, connection_id, message, is_binary)
+                    },
+                    PluginCommand::WebSocketClose(connection_id) => {
+                        web_socket_close(env, connection_id)
+                    },
                     PluginCommand::PostMessageTo(plugin_message) => {
                         post_message_to(env, plugin_message)?
                     },
@@ -2561,6 +2570,50 @@ fn web_request(
             headers,
             body,
             context,
+        ));
+}
+
+fn web_socket_open(
+    env: &PluginEnv,
+    url: String,
+    headers: BTreeMap<String, String>,
+    context: BTreeMap<String, String>,
+) {
+    let _ = env
+        .senders
+        .send_to_background_jobs(BackgroundJob::WebSocketOpen(
+            env.plugin_id,
+            env.client_id,
+            url,
+            headers,
+            context,
+        ));
+}
+
+fn web_socket_send(
+    env: &PluginEnv,
+    connection_id: u32,
+    message: Vec<u8>,
+    is_binary: bool,
+) {
+    let _ = env
+        .senders
+        .send_to_background_jobs(BackgroundJob::WebSocketSend(
+            env.plugin_id,
+            env.client_id,
+            connection_id,
+            message,
+            is_binary,
+        ));
+}
+
+fn web_socket_close(env: &PluginEnv, connection_id: u32) {
+    let _ = env
+        .senders
+        .send_to_background_jobs(BackgroundJob::WebSocketClose(
+            env.plugin_id,
+            env.client_id,
+            connection_id,
         ));
 }
 
@@ -5188,7 +5241,10 @@ fn check_command_permission(
         | PluginCommand::OpenCommandPaneInPlaceOfPaneId(..)
         | PluginCommand::RunCommand(..)
         | PluginCommand::ExecCmd(..) => PermissionType::RunCommands,
-        PluginCommand::WebRequest(..) => PermissionType::WebAccess,
+        PluginCommand::WebRequest(..)
+        | PluginCommand::WebSocketOpen(..)
+        | PluginCommand::WebSocketSend(..)
+        | PluginCommand::WebSocketClose(..) => PermissionType::WebAccess,
         PluginCommand::Write(..)
         | PluginCommand::WriteChars(..)
         | PluginCommand::WriteToPaneId(..)

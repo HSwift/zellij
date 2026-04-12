@@ -67,6 +67,10 @@ enum EventType {
     HighlightClicked = 42;
     PaneRenderReportWithAnsi = 43;
     InitialKeybinds = 44;
+    WebSocketConnected = 45;
+    WebSocketMessage = 46;
+    WebSocketError = 47;
+    WebSocketDisconnected = 48;
 }
 
 message EventNameList {
@@ -113,6 +117,10 @@ message Event {
     HighlightClickedPayload highlight_clicked_payload = 36;
     PaneRenderReportPayload pane_render_report_with_ansi_payload = 37;
     InitialKeybindsPayload initial_keybinds_payload = 38;
+    WebSocketConnectedPayload web_socket_connected_payload = 39;
+    WebSocketMessagePayload web_socket_message_payload = 40;
+    WebSocketErrorPayload web_socket_error_payload = 41;
+    WebSocketDisconnectedPayload web_socket_disconnected_payload = 42;
   }
 }
 
@@ -534,3 +542,25 @@ message InitialKeybindsPayload {
   repeated InputModeKeybinds keybinds = 1;
 }
 
+message WebSocketConnectedPayload {
+  uint32 connection_id = 1;
+  repeated ContextItem context = 2;
+}
+
+message WebSocketMessagePayload {
+  uint32 connection_id = 1;
+  bytes message = 2;
+  bool is_binary = 3;
+}
+
+message WebSocketErrorPayload {
+  uint32 connection_id = 1;
+  string error = 2;
+  repeated ContextItem context = 3;
+}
+
+message WebSocketDisconnectedPayload {
+  uint32 connection_id = 1;
+  string reason = 2;
+  repeated ContextItem context = 3;
+}
