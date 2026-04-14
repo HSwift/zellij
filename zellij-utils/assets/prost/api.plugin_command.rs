@@ -901,32 +901,6 @@ pub struct WebRequestPayload {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct WebSocketOpenPayload {
-    #[prost(string, tag="1")]
-    pub url: ::prost::alloc::string::String,
-    #[prost(message, repeated, tag="2")]
-    pub headers: ::prost::alloc::vec::Vec<super::event::Header>,
-    #[prost(message, repeated, tag="3")]
-    pub context: ::prost::alloc::vec::Vec<ContextItem>,
-}
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct WebSocketSendPayload {
-    #[prost(uint32, tag="1")]
-    pub connection_id: u32,
-    #[prost(bytes="vec", tag="2")]
-    pub message: ::prost::alloc::vec::Vec<u8>,
-    #[prost(bool, tag="3")]
-    pub is_binary: bool,
-}
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct WebSocketClosePayload {
-    #[prost(uint32, tag="1")]
-    pub connection_id: u32,
-}
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct EnvVariable {
     #[prost(string, tag="1")]
     pub name: ::prost::alloc::string::String,
@@ -1017,6 +991,32 @@ pub struct GoToTabWithIdPayload {
 pub struct CloseTabWithIdPayload {
     #[prost(uint64, tag="1")]
     pub tab_id: u64,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct WebSocketOpenPayload {
+    #[prost(string, tag="1")]
+    pub url: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag="2")]
+    pub headers: ::prost::alloc::vec::Vec<super::event::Header>,
+    #[prost(message, repeated, tag="3")]
+    pub context: ::prost::alloc::vec::Vec<ContextItem>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct WebSocketSendPayload {
+    #[prost(uint32, tag="1")]
+    pub connection_id: u32,
+    #[prost(bytes="vec", tag="2")]
+    pub message: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bool, tag="3")]
+    pub is_binary: bool,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct WebSocketClosePayload {
+    #[prost(uint32, tag="1")]
+    pub connection_id: u32,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]

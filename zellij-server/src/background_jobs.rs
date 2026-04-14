@@ -481,29 +481,31 @@ pub(crate) fn background_jobs_main(
                     let senders = bus.senders.clone();
                     async move {
                         // Build a custom HTTP request with headers for the handshake
-                        let ws_request = {
-                            let mut req = tungstenite::http::Request::builder()
-                                .uri(&url);
-                            for (key, val) in &headers {
-                                req = req.header(key.as_str(), val.as_str());
-                            }
-                            match req.body(()) {
-                                Ok(r) => r,
-                                Err(e) => {
-                                    let _ = senders.send_to_plugin(PluginInstruction::Update(vec![(
-                                        Some(plugin_id),
-                                        Some(client_id),
-                                        Event::WebSocketError(
-                                            connection_id,
-                                            format!("Failed to build WebSocket request: {}", e),
-                                            context,
-                                        ),
-                                    )]));
-                                    ws_connections.lock().unwrap().remove(&connection_id);
-                                    return;
-                                },
+                        let mut ws_request = match tokio_tungstenite::tungstenite::client::IntoClientRequest::into_client_request(url) {
+                            Ok(req) => req,
+                            Err(e) => {
+                                let _ = senders.send_to_plugin(PluginInstruction::Update(vec![(
+                                    Some(plugin_id),
+                                    Some(client_id),
+                                    Event::WebSocketError(
+                                        connection_id,
+                                        format!("Failed to build WebSocket request: {}", e),
+                                        context,
+                                    ),
+                                )]));
+                                ws_connections.lock().unwrap().remove(&connection_id);
+                                return;
                             }
                         };
+
+                        let headers_mut = ws_request.headers_mut();
+                        for (key, val) in &headers {
+                            if let Ok(header_name) = tokio_tungstenite::tungstenite::http::header::HeaderName::from_bytes(key.as_bytes()) {
+                                if let Ok(header_value) = tokio_tungstenite::tungstenite::http::header::HeaderValue::from_str(val) {
+                                    headers_mut.insert(header_name, header_value);
+                                }
+                            }
+                        }
 
                         // Connect
                         let ws_stream = match tokio_tungstenite::connect_async(ws_request).await {

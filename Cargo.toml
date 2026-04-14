@@ -29,6 +29,7 @@ names = { workspace = true }
 suggest = { workspace = true }
 thiserror = { workspace = true }
 isahc = { workspace = true }
+tokio-tungstenite = "0.29.0"
 
 [target.'cfg(unix)'.dependencies]
 nix = { workspace = true }
