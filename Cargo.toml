@@ -59,6 +59,7 @@ members = [
     "default-plugins/multiple-select",
     "default-plugins/layout-manager",
     "default-plugins/link",
+    "default-plugins/zj-agent",
     "zellij-client",
     "zellij-server",
     "zellij-utils",
